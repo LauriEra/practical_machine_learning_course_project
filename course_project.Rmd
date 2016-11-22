@@ -1,0 +1,23 @@
+---
+title: "Prediction of human activity"
+author: "Lauri Era"
+date: "18 marraskuuta 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr,warn.conflicts = FALSE)
+setwd("C:/oppimateriaali/coursera/ds/practical_machine_learning/")
+```
+
+## Read in the data
+
+```{r}
+training <- read.csv("pml-testing.csv")
+testing <- read.csv("pml-testing.csv")
+```
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
