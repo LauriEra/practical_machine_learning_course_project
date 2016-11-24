@@ -4,20 +4,89 @@ author: "Lauri Era"
 date: "18 marraskuuta 2016"
 output: html_document
 ---
+The aim here is to predict the type of activity a human is engaged in, based on sensor data of that person.
+The data used here was originally gathered in the study "Qualitative Activity Recognition of Weight Lifting Exercises" by Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W. and Fuks, H.. And it was made available through "http://groupware.les.inf.puc-rio.br/har#dataset".
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
 library(dplyr,warn.conflicts = FALSE)
-setwd("C:/oppimateriaali/coursera/ds/practical_machine_learning/")
+library(ggplot2,quietly = T)
+library(caret,quietly = T)
+library(gbm,quietly = T)
 ```
 
-## Read in the data
+# Read in the data and do some initial selection of variables
+
+First we read in the data and exclude those variables that are missing most of the time. This exclusion criterion is based only on the training data. Next we see that there is column named "X" indicating the row numbers and we exclude that as well.
+There are also timestamp type variables and window related variables, these are not going to be considered, instead the classification is going to be build solely on the measurements.
 
 ```{r}
-training <- read.csv("pml-testing.csv")
+setwd("C:/oppimateriaali/coursera/ds/practical_machine_learning/")
+training <- read.csv("pml-training.csv")
 testing <- read.csv("pml-testing.csv")
+
+nas <- training %>% summarise_all(function(x)mean(is.na(x)))
+nasNames <- names(nas)[nas<0.7]
+training <- training[,names(training)%in%nasNames]
+testing <- testing[,names(testing)%in%nasNames]
+notConsidered <- c("X","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","new_window","num_window")
+training <- training[,!names(training)%in%notConsidered]
+testing <- testing[,!names(testing)%in%notConsidered]
+par(mfrow=c(2,2))
+boxplot(gyros_forearm_y~classe,training,main="Gyroscope forearm y")
+boxplot(gyros_forearm_x~classe,training,main="Gyroscope forearm x")
+boxplot(roll_belt~classe,training,main="Roll belt")
+boxplot(gyros_belt_y~classe,training,main="Gyroscope belt y")
 ```
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+From the first two plots we see that there is a clear outlier in the gyroscope data. When looking through the different measurements we see that there are few clear distinctions between the groups but more that one groups mass is centered a bit differently, an example of this can be seen in the third plot. In some measures there does not seem to be any systematic difference at all, an example of this can be seen in the fourth plot.
+Next we take out of the dataset the two obvious outliers, as their values are way off there has probably been some sort of error or nonconformity with making the measurements in these cases.
+```{r}
+training <- training %>% filter(gyros_forearm_y<10)
+training <- training %>% filter(magnet_dumbbell_y> -1000)
+```
+
+# Finding the best model
+
+The models used are going to be gradient boosted decision tree ensembles fitted using the gbm-library.
+The modelling is going to be done in two main phases. First a model with only a few trees is going to be fitted to identify the most promising variables. Then the hyperparameters are tuned using repeated cross validation. 
+When the parameter tuning is done the chosen final model is inspected with five fold crossvalidation.
+
+```{r}
+form <- paste(names(training)[-ncol(training)],collapse = "+")
+form <- paste("classe",sep="~",form)
+form <- as.formula(form)
+set.seed(150622)
+initial_model <- gbm(form,data=training, n.trees=25,interaction.depth=3,shrinkage=0.05)
+
+## Taking the variables that look promising
+chosen_vars <- summary(initial_model, plotit = FALSE)$var[summary(initial_model, plotit = FALSE)$rel.inf>0]
+form_chosen <- paste(chosen_vars,collapse="+")
+form_chosen <- paste("classe",sep="~",form_chosen)
+form_chosen <- as.formula(form_chosen)
+
+## Hyperparameter tuning
+# This takes a while
+control <- trainControl(method="repeatedcv", number=5, repeats=2)
+grid <- expand.grid(n.trees=seq(from=10,to=210,by=50),shrinkage=seq(from=0.001,to=0.1,by=0.02),interaction.depth=2:3,
+                    n.minobsinnode=10)
+set.seed(150622)
+#grid_model <- train(form_chosen,training,method="gbm",tuneGrid=grid,trControl=control, verbose=FALSE)
+
+#Tuning parameter 'n.minobsinnode' was held constant at a value of 10
+#Accuracy was used to select the optimal model using  the largest value.
+#The final values used for the model were n.trees = 210, interaction.depth = 3, shrinkage = 0.081 and n.minobsinnode = 10.
+# shrinkage  interaction.depth  n.trees  Accuracy   Kappa
+# 0.081      3                  210      0.9243800  0.9043258
+```
+
+Since the most complex model gave the best results it could be that even better could be achieved with allowing more trees and an increased interaction depth. Let us try that, but for efficiency let us keep the others at the values previously found best.
+
+```{r}
+control <- trainControl(method="repeatedcv", number=5, repeats=2)
+grid <- expand.grid(n.trees=seq(from=210,to=260,by=50),shrinkage=0.081,interaction.depth=3:4,
+                    n.minobsinnode=10)
+set.seed(150622)
+grid_model <- train(form_chosen,training,method="gbm",tuneGrid=grid,trControl=control, verbose=FALSE)
 ```
