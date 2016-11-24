@@ -89,4 +89,20 @@ grid <- expand.grid(n.trees=seq(from=210,to=260,by=50),shrinkage=0.081,interacti
                     n.minobsinnode=10)
 set.seed(150622)
 grid_model <- train(form_chosen,training,method="gbm",tuneGrid=grid,trControl=control, verbose=FALSE)
+grid_model$results
 ```
+
+The method for attaining a believable estimate of error was five fold cross validation. So the data was divided to five parts and for five times one of those subsets was left out the model estimated, and then the attained model used for predicting the left out subset of cases. But here this procedure was also done twice to diminish the possible effects of the exact division on the results.
+Now the achieved cross validated accuracy is about 0.94. If 20 predictions are made one or two of them are probably wrong, which seems rather good.
+Finally let us look at the confusion matrix to see which classes are the hardest for the model to distinguish.
+
+```{r}
+# Which class gets the highest value i.e. is the prediction
+predictions <- apply(grid_model$finalModel$fit,1,which.max) 
+# Transform the predictions from column numbres to the original values
+predictions <- colnames(grid_model$finalModel$fit)[predictions] 
+# Get the confusion matrix 
+confusion <- confusionMatrix(predictions,training$classe)
+confusion
+```
+The classes B and C seem to be easiest to confuse, with each other and B to A and C to D. Class E on the other hands seems to be the most easily distinctable class.
